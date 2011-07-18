@@ -74,6 +74,6 @@ Browser JS applications can use the [Faye browser client](http://faye.jcoglan.co
     
     client.subscribe("/location", function(msg) {
        alert("Got an event");
-    }
+    });
 
     client.publish("/location", {'latitude':40, 'longitude':-23});
