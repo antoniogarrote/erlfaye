@@ -1,0 +1,79 @@
+div 
+{ 
+  border: 0px solid black; 
+}
+
+div.container
+{
+  background-color: #e0e0e0;
+  border: 1px solid black; 
+  width: 720px;
+}
+
+div.output
+{
+  height: 20ex;
+  overflow: auto; 
+  background-color: #f0f0f0;
+  padding: 4px;
+  border: 0px solid black; 
+}
+
+div.input
+{
+  clear: both;
+  padding: 4px;
+  border: 0px solid black; 
+  border-top: 1px solid black; 
+}
+
+input#rpc_text
+{
+  width:28em;
+  background-color: #e0f0f0;
+}
+
+input#rpc_delay
+{
+  width:7em;
+  background-color: #e0f0f0;
+}
+
+input#phrase
+{
+  width:28em;
+  background-color: #e0f0f0;
+}
+
+input#username
+{
+  width:14em;
+  background-color: #e0f0f0;
+}
+
+div.hidden
+{
+  display: none;
+}
+
+span.from
+{
+  font-weight: bold;
+}
+
+span.alert
+{
+  color: #888888;
+  font-style: italic;
+}
+
+h2
+{
+  color: #333333;
+}
+	
+h3
+{
+  color: #444444;
+  margin-bottom: 5px;
+}

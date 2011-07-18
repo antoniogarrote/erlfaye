@@ -1,0 +1,118 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
+   "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<title>Erlfaye demo</title>
+	<link rel="stylesheet" href="/css/demo.css" type="text/css" media="screen">
+	<link rel="stylesheet" href="/css/blueprint/screen.css" type="text/css" media="screen">
+	<link rel="stylesheet" href="/css/blueprint/print.css" type="text/css" media="screen">
+	<link rel="stylesheet" href="/css/blueprint/ie.css" type="text/css" media="screen">
+
+	<script type='text/javascript' src='/js/faye-browser.js'></script>
+	<script type='text/javascript' src='/js/jquery.js'></script>
+        <script type="text/javascript" src="http://maps.google.com/maps/api/js?sensor=true"></script>
+
+        <script type="text/javascript">
+          $(document).ready(function() {
+            var client = new Faye.Client('http://localhost:3000/cometd');
+            var eventsCounter = 0;
+
+            var initialLocation = new google.maps.LatLng(40.69847032728747, -23.9514422416687);             
+
+            var myOptions = { zoom: 3,
+                              mapTypeId: google.maps.MapTypeId.ROADMAP };
+             
+	    var map = new google.maps.Map(document.getElementById("map_place_holder"), myOptions);
+            map.setCenter(initialLocation);
+             
+             
+            $('#locate_me_link').click(function(){
+              sendLocation();
+            });
+            $('#eventsCounter').html("Events: "+eventsCounter);
+
+            var geolocationSuccess = function(position) {
+              var latitude = position.coords.latitude;
+              var longitude = position.coords.longitude
+             
+              client.publish("/location", {'latitude':latitude, 'longitude':longitude});
+            };
+             
+            var geolocationError = function(msg) {
+              $('#spinner').hide();
+              $('#locate_me_button').show();
+              alert("There was a problem getting your location");
+            };
+             
+            var sendLocation = function() {
+              //client.publish("/location", {'latitude':40, 'longitude':-23});             
+
+              $('#spinner').show();
+              $('#locate_me_button').hide();
+              //return;
+              if(navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(geolocationSuccess, geolocationError);
+              } else {
+                $('#spinner').hide();
+                $('#locate_me_button').show();
+                alert("Your browser does not support the geo location API.");
+              }
+            }
+             
+            client.subscribe("/location", function(msg) {
+              $('#spinner').hide();
+              $('#locate_me_button').show();
+
+              eventsCounter++;
+              $('#eventsCounter').html("Events: "+eventsCounter);
+
+              var latlng = new google.maps.LatLng(msg.latitude, msg.longitude);
+              var marker = new google.maps.Marker({ position: latlng,
+	                                            map: map });
+              map.setCenter(latlng);
+            });
+          });
+        </script>
+</head>
+<body>
+  <div id='header'>
+    <h1>Erlfaye</h1>
+  </div>
+  <div id='main'>
+    <div id='main_content'>
+      <div id='content' class='container'>
+
+        <div class='column prepend-2 span-14 append-1'>
+          <div id='statement'>
+            Erlfaye is an Erlang implementation of the version of the
+            Bayeux protocol supported by the Faye client.
+            It is built on top of Mochiweb extending the code of Erlycomet.
+          </div>
+        </div>
+
+        <div class='column prepend-1 span-5 box last'>
+          You can find the code in Github
+        </div>
+      </div>
+
+      <div id='map_place_outer_holder'>
+        <div id='map_place_holder'>
+        </div>
+
+        <div id='tools'>
+          <div id='eventsCounter'></div>
+          <div id='locate_me_button'>
+            <a id='locate_me_link'>find me</a>
+          </div>
+          <div id='spinner'>
+            locating+notifying... <img src='/images/spinner.gif'></img>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</body>
+
+
