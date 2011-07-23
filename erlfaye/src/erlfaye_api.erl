@@ -38,15 +38,20 @@ cache_loop(Events, TransportPid) ->
             error_logger:warning_msg(">>>> CACHE EVENT ~p  TransportPid ~p ~n",[Event, TransportPid]),
             if 
                 TransportPid =/= 0 ->
-                    error_logger:warning_msg(">>>> CACHE HINTING TRANSPORT ~p  ~n",[TransportPid]),
-                    TransportPid ! hint;
+                    ProcessAlive = is_process_alive(TransportPid),
+                    if ProcessAlive == true ->
+                            error_logger:warning_msg(">>>> CACHE HINTING TRANSPORT ~p  ~n",[TransportPid]),
+                            TransportPid ! {hint,self()};
+                       ProcessAlive == false ->
+                            error_logger:warning_msg(">>>> CACHE NOT HINTING TRANSPORT (DEAD)  ~p ~n",[TransportPid])
+                    end;
                 true  ->
-                    error_logger:warning_msg(">>>> CACHE NOT HINTING TRANSPORT  ~p ~n",[TransportPid])
+                    error_logger:warning_msg(">>>> CACHE NOT HINTING TRANSPORT (0) ~p ~n",[TransportPid])
             end,
             error_logger:warning_msg(">>>> CACHE LOOPING IN EVENT ~n",[]),   
             cache_loop([Event | Events], TransportPid);
         flush ->
-            error_logger:warning_msg(">>>> CACHE FLUSH  ~n",[]),
+            error_logger:warning_msg(">>>> CACHE FLUSH ~p ~n",[TransportPid]),
             TransportPid ! {cachedEvents, lists:reverse(Events)},
             cache_loop([], TransportPid);            
         {setpid, Pid}   ->
@@ -117,29 +122,27 @@ replace_connection(ClientId, Pid, NewState) ->
     replace_connection(ClientId, Pid, 0, NewState).
 replace_connection(ClientId, Pid, CachePid, NewState) -> 
     E = #connection{client_id=ClientId, pid=Pid, state=NewState, websocket_pid=0},
-    F1 = fun() -> mnesia:read({connection, ClientId}) end,
-    {Status, F2} = case mnesia:transaction(F1) of
-                       {atomic, EA} ->
-                           error_logger:warning_msg("READ FROM MNESIA ~p~n",[EA]),
-                           case EA of
-                               [] ->
-                                   ECPid = E#connection{cache_pid=CachePid},
-                                   {new, fun() -> mnesia:write(ECPid) end};
-                               [#connection{state=State, websocket_pid=WebsocketPid, cache_pid=ActualCachePid}] ->
-                                   ECPid = E#connection{cache_pid=ActualCachePid, websocket_pid=WebsocketPid},
-                                   case State of
-                                       handshake ->
-                                           {replaced_hs, fun() -> mnesia:write(ECPid) end};
-                                       _ ->
-                                           {replaced, fun() -> mnesia:write(ECPid) end}
-                                   end
-                           end;
-                       _ ->
-                           {new, fun() -> mnesia:write(E) end}
-                   end,
-
-    case mnesia:transaction(F2) of
-        {atomic, ok} -> {ok, Status};
+    F1 = fun() -> case mnesia:read({connection, ClientId}) of
+                      [] ->
+                          ECPid = E#connection{cache_pid=CachePid},
+                          error_logger:warning_msg(" -- REPLACING CONNECTION AS IS  ~p  ~n",[ECPid]),
+                          {new, mnesia:write(ECPid)};
+                      [#connection{state=State, websocket_pid=WebsocketPid, cache_pid=ActualCachePid}] ->
+                          ECPid = E#connection{cache_pid=ActualCachePid, websocket_pid=WebsocketPid},
+                          error_logger:warning_msg(" -- REPLACING CONNECTION  ~p  ~n",[ECPid]),
+                          case State of
+                              handshake ->
+                                  {replaced_hs, mnesia:write(ECPid)};
+                              _ ->
+                                  {replaced, mnesia:write(ECPid)}
+                          end;
+                      _ ->
+                          error_logger:warning_msg(" -- REPLACING CONNECTION AS IS (ERROR???)  ~p  ~n",[E]),
+                          {new, mnesia:write(E)}
+                  end
+         end,
+    case mnesia:transaction(F1) of
+        {atomic, {Status, _} } -> {ok, Status};
         _ -> error
     end.
 
@@ -147,28 +150,31 @@ replace_connection_ws(ClientId, Pid, NewState) ->
     replace_connection_ws(ClientId, Pid, 0, NewState).
 replace_connection_ws(ClientId, Pid, CachePid, NewState) -> 
     E = #connection{client_id=ClientId, pid=Pid, state=NewState, websocket_pid=Pid},
-    F1 = fun() -> mnesia:read({connection, ClientId}) end,
-    {Status, F2} = case mnesia:transaction(F1) of
-                       {atomic, EA} ->
-                           case EA of
-                               [] ->
-                                   ECPid = E#connection{cache_pid=CachePid},
-                                   {new, fun() -> mnesia:write(ECPid) end};
-                               [#connection{state=State, cache_pid=ActualCachePid}] ->
-                                   ECPid = E#connection{cache_pid=ActualCachePid},
-                                   case State of
-                                       handshake ->
-                                           {replaced_hs, fun() -> mnesia:write(ECPid) end};
-                                       _ ->
-                                           {replaced, fun() -> mnesia:write(ECPid) end}
-                                   end
-                           end;
-                       _ ->
-                           {new, fun() -> mnesia:write(E) end}
-                   end,
-
-    case mnesia:transaction(F2) of
-        {atomic, ok} -> {ok, Status};
+    F1 = fun() ->  
+                 case mnesia:read({connection, ClientId}) of
+                     [] ->
+                         ECPid = E#connection{cache_pid=CachePid},
+                         error_logger:warning_msg(" -- WS REPLACING CONNECTION AS IS  ~p  ~n",[ECPid]),
+                         {new, mnesia:write(ECPid)};
+                     [#connection{state=State, cache_pid=ActualCachePid}] ->
+                         ECPid = E#connection{cache_pid=ActualCachePid},
+                         error_logger:warning_msg(" -- WS REPLACING CONNECTION  ~p  ~n",[ECPid]),
+                         Result = case State of
+                                      handshake ->
+                                          {replaced_hs, mnesia:write(ECPid)};
+                                      _ ->
+                                          {replaced, mnesia:write(ECPid)}
+                                  end,
+                         error_logger:warning_msg("WS (~p) UPDATING CACHE WHEN RECURRING AFTER CONNECT ~p  ~n",[self(), ActualCachePid]),
+                         ActualCachePid ! {setpid, Pid},
+                         Result;
+                     _ ->
+                         error_logger:warning_msg(" -- WS REPLACING CONNECTION AS IS  (ERROR??) ~p  ~n",[E]),
+                         {new, mnesia:write(E)}
+                 end
+         end,
+    case mnesia:transaction(F1) of
+        {atomic, {Status,_}} -> {ok, Status};
         _ -> error
     end.
        
@@ -231,6 +237,7 @@ connection_event_receiver_pid(ClientId) ->
             error_logger:warning_msg("EVENT RECEIVER IS WEBSOCKET: ~p ~n",[WebsocketPid]),        
             WebsocketPid;
         undefined -> 
+            error_logger:warning_msg("EVENT RECEIVER IS NIL: ~n",[]),        
             undefined
     end.    
 
@@ -404,6 +411,7 @@ deliver_to_single_channel(Channel, Data) ->
             error_logger:warning_msg("NOT HANDLERS FOUND FOR CHANNEL: ~p ~n",[Channel]),        
             ok;
         {atomic, [{channel, Channel, Ids}] } ->
+            error_logger:warning_msg("DELIVERING TO: ~p  CLIENTS ~n",[length(Ids)]),        
             [send_event(connection_event_receiver_pid(ClientId), Event) || ClientId <- Ids],
             ok; 
         _ ->
