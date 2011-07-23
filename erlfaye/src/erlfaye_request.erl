@@ -38,7 +38,6 @@ handle(Req, 'GET') ->
             case erlfaye_websockets_api:try_to_upgrade(Req) of
                 false     -> done;
                 WebSocket ->
-                    error_logger:warning_msg("WS (~p) UPDGRADING OK! ~n",[self()]),
                     websocket_loop(WebSocket),
                     done
             end;
@@ -92,7 +91,6 @@ loop(Resp, #state{events=Events, id=Id} = State, CachePid, Callback) ->
             AllEvents = CachedEvents++lists:reverse(Events),
 
             ShouldQueue = shouldQueue(AllEvents),
-            error_logger:warning_msg("********** should queue?: ~p ~n -> ~n ~p~n~n",[AllEvents, ShouldQueue]),
             if 
                 ShouldQueue == false ->
                     error_logger:warning_msg("********** SENDING: ~p~n~p~n~n",[Id,AllEvents]),
@@ -146,10 +144,8 @@ websocket_loop(WebSocket) ->
 websocket_loop(WebSocket, MaybeCachePid, Cache,ClientId) ->
     if
         MaybeCachePid =/= 0 ->
-            error_logger:warning_msg("WS (~p) FLUSHING CACHE ~p ~n",[self(), MaybeCachePid]),
             MaybeCachePid ! flush;
         true  ->
-            error_logger:warning_msg("WS (~p) NOT FLUSHING CACHE ~p ~n",[self(), MaybeCachePid]),
             default
     end,
 
@@ -164,13 +160,12 @@ websocket_loop(WebSocket, MaybeCachePid, Cache,ClientId) ->
             CachePid ! flush,
             case MaybeCachePid of
                 0 ->
-                    error_logger:warning_msg("WS (~p) UPDATING CACHE PID ~p ~n",[self(), CachePid]),
                     websocket_loop(WebSocket,CachePid,Cache,ClientId);                    
                 _ ->
                     websocket_loop(WebSocket,MaybeCachePid,Cache,ClientId)
             end;                
         {event, Event}  ->
-            error_logger:warning_msg("WS (~p) SENDING RECEIVED EVENT ~n",[self(), Event]),
+            error_logger:warning_msg("WS (~p) SENDING RECEIVED EVENT ~n~p~n",[self(), Event]),
             erlfaye_websockets_api:send_data(WebSocket, mochijson2:encode(Event)),
             websocket_loop(WebSocket,MaybeCachePid,Cache,ClientId);
         {tcp_closed,_} ->
@@ -191,10 +186,8 @@ websocket_loop(WebSocket, MaybeCachePid, Cache,ClientId) ->
                     {Results,CacheP,ClientIdPP} = case JsonObj of   
                                                       Array when is_list(Array) -> 
                                                           AllMessages = (lists:reverse(Cache)++Array),
-                                                          error_logger:warning_msg("WS (~p) TRYING TO UPDATE CLIENTS... ~n",[self()]),
                                                           ClientIdP = update_connection_client_ws(ClientId,AllMessages),
                                                           Channels = [ get_json_map_val(<<"channel">>, X) || X <- AllMessages ],
-                                                          error_logger:warning_msg("WS (~p) ALL CHANNELS: ~p ~n",[self(),Channels]),
                                                           case Channels of
                                                               [<<"/meta/connect">>] ->
                                                                   {[continue], [lists:nth(1,Array)|Cache], ClientIdP};
@@ -215,12 +208,10 @@ websocket_loop(WebSocket, MaybeCachePid, Cache,ClientId) ->
 update_connection_client_ws(0,[]) ->
     0;
 update_connection_client_ws(0,[Struct|T]) ->
-    error_logger:warning_msg("WS (~p) TRYING TO UPDATE CLIENTS SEARCHING IN ~p --> ~p ~n",[self(), Struct,get_json_map_val(<<"clientId">>, Struct)]),
     case get_json_map_val(<<"clientId">>, Struct) of
         undefined ->
             update_connection_client_ws(0,T);
         ClientId ->
-            error_logger:warning_msg("WS (~p) TRYING TO UPDATE CLIENTS FOUND! replacing: ~n",[self()]),
             erlfaye_api:replace_connection_ws(ClientId, self(), connected),
             ClientId
     end;
@@ -397,7 +388,7 @@ process_cmd(_Req, <<"/meta/unsubscribe">> = Channel, Struct, _) ->
     done;
 
 process_cmd(_Req, <<"/meta/disconnect">> = Channel, Struct, _) ->   
-    error_logger:warning_msg("UNSUBSCRIBE channel ~p ~p~n",[Channel, Struct]),    
+    error_logger:warning_msg("DISCONNECT channel ~p ~p~n",[Channel, Struct]),    
     ClientId = get_json_map_val(<<"clientId">>, Struct),
     MessageId = get_json_map_val(<<"id">>, Struct),
 
@@ -502,14 +493,3 @@ should_continue([H|T]) ->
         _  ->
             should_continue(T)
     end.
-
-%%update_cache_pid([],CachePid) ->
-%%    CachePid;
-%%update_cache_pid([H|T], CachePid) ->
-%%    case H of
-%%        {continue, Pid} ->
-%%            update_cache_pid(T,Pid);
-%%        _  ->
-%%            update_cache_pid(T, CachePid)
-%%    end.
-                
